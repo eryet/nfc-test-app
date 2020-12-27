@@ -1,6 +1,6 @@
 # nfc-test-app
 
-please follow through [react native enviroment setup](https://reactnative.dev/docs/environment-setup) for first tiem react native user
+please follow through [react native enviroment setup](https://reactnative.dev/docs/environment-setup) for first time react native user
 
 first run `npm install` to install all dependencies
 then run `npm start`
