@@ -82,17 +82,262 @@ const styles = StyleSheet.create({
   },
 });
 
+// Writer Component
+const Write = () => {
+  const [info, setInfo] = useState({
+    id: '空',
+  });
+  const [support, isSupported] = useState(true);
+  const [urlToWrite, setUrlToWrite] = useState('');
+  const [rtdtype, setRtdtype] = useState(RtdType.URL);
+  const [writing, setWriting] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    NfcManager.isSupported().then(supported => {
+      isSupported(supported);
+      if (supported) {
+        startNfc();
+      }
+    });
+    // to listen to the discovered tags and the NdefMessage within them
+    NfcManager.setEventListener(NfcEvents.DiscoverTag, tag => {
+      console.warn(tag);
+      setInfo(tag);
+      setLoading(false);
+      NfcManager.setAlertMessageIOS('I got your tag!');
+      NfcManager.unregisterTagEvent().catch(error => {
+        console.warn('unregisterTagEvent fail', error);
+      });
+    });
+    return cleanUp;
+  });
+
+  const read = async () => {
+    try {
+      NfcManager.registerTagEvent()
+        .then(result => {
+          console.log('registerTagEvent OK', result);
+        })
+        .catch(error => {
+          console.warn('registerTagEvent fail', error);
+        });
+    } catch (ex) {
+      console.log(ex);
+      console.warn('ex', ex);
+      NfcManager.unregisterTagEvent().catch(() => 0);
+    }
+  };
+
+  const startNfc = () => {
+    NfcManager.start({
+      onSessionClosedIOS: () => {
+        console.log('ios session closed');
+      },
+    })
+      .then(result => {
+        console.log('start OK', result);
+      })
+      .catch(error => {
+        console.warn('start fail', error);
+        // this.setState({supported: false});
+      });
+
+    if (Platform.OS === 'android') {
+      // NfcManager.getLaunchTagEvent()
+      //     .then(tag => {
+      //         console.log('launch tag', tag);
+      //         if (tag) {
+      //             // save information from tag
+      //             // tag is object
+      //             setTag(tag)
+      //         }
+      //     })
+      //     .catch(err => {
+      //         console.log(err);
+      //     })
+      NfcManager.isEnabled()
+        .then(enable => {
+          setEnabled(enable);
+        })
+        .catch(err => {
+          console.log(err);
+        });
+      NfcManager.onStateChanged(event => {
+        if (event.state === 'on') {
+          setEnabled(true);
+        } else if (event.state === 'off') {
+          setEnabled(false);
+        }
+      }).catch(err => {
+        console.warn(err);
+      });
+    }
+  };
+
+  const buildUrlPayload = value => {
+    return Ndef.encodeMessage([Ndef.uriRecord(value)]);
+  };
+
+  const buildTextPayload = value => {
+    return Ndef.encodeMessage([Ndef.textRecord(value)]);
+  };
+
+  const cancelNdefWrite = () => {
+    setWriting(false);
+    NfcManager.cancelNdefWrite()
+      .then(() => console.log('write cancelled'))
+      .catch(err => console.warn(err));
+  };
+
+  const requestNdefWrite = () => {
+    if (writing) {
+      return;
+    }
+
+    let bytes;
+
+    if (rtdtype === RtdType.URL) {
+      bytes = buildUrlPayload(urlToWrite);
+    } else if (rtdtype === RtdType.TEXT) {
+      bytes = buildTextPayload(urlToWrite);
+    }
+
+    setWriting(true);
+    NfcManager.requestNdefWrite(bytes)
+      .then(() => console.log('write completed'))
+      .catch(err => console.warn(err))
+      .then(() => setWriting(false));
+  };
+
+  const requestFormat = () => {
+    if (writing) {
+      return;
+    }
+
+    setWriting(true);
+    NfcManager.requestNdefWrite(null, {format: true})
+      .then(() => console.log('format completed'))
+      .catch(err => console.warn(err))
+      .then(() => setWriting(false));
+  };
+
+  const cleanUp = () => {
+    NfcManager.unregisterTagEvent().catch(() => 0);
+    NfcManager.cancelTechnologyRequest().catch(() => 0);
+  };
+
+  // not using it, basically without input with fixed url writen to tag
+  const write = async () => {
+    try {
+      let resp = await NfcManager.requestTechnology(NfcTech.Ndef, {
+        alertMessage: 'Ready to write some NFC tags!',
+      });
+      console.warn(resp);
+      let ndef = await NfcManager.getNdefMessage();
+      console.warn(ndef);
+      let bytes = buildUrlPayload('https://www.gazette.ncnu.edu.tw/');
+      await NfcManager.writeNdefMessage(bytes);
+      console.warn('success');
+      await NfcManager.setAlertMessageIOS('I got your tag!');
+      cleanUp();
+    } catch (ex) {
+      console.warn('ex', ex);
+      cleanUp();
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>測試 NFC Writer 功能</Text>
+      <Text style={styles.whitetext}>
+        是否支援NFC?{'  '}
+        <Text
+          style={{
+            backgroundColor: support ? 'green' : 'red',
+            color: 'white',
+          }}>
+          {support ? '支援' : '不支援'}
+        </Text>
+      </Text>
+      <View style={styles.separator2} />
+      <Text style={styles.whitetext}>
+        是否開啟NFC?{'  '}
+        <Text
+          style={{
+            backgroundColor: enabled ? 'green' : 'red',
+            color: 'white',
+          }}>
+          {enabled ? '開啟' : '未開啟'}
+        </Text>
+      </Text>
+      <View style={styles.separator} />
+      <View style={{flexDirection: 'row'}}>
+        <Text style={styles.labelmarginright}>類別:</Text>
+        {Object.keys(RtdType).map(key => (
+          <TouchableOpacity
+            key={key}
+            style={{marginRight: 10}}
+            onPress={() => setRtdtype(RtdType[key])}>
+            <Text
+              style={{
+                color: rtdtype === RtdType[key] ? 'yellow' : 'white',
+                fontSize: 16,
+              }}>
+              {key}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <View style={styles.separator2} />
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: 10,
+        }}>
+        <Text style={styles.labelmarginright}>輸入:</Text>
+        <TextInput
+          style={{width: 200, height: 40, backgroundColor: 'white'}}
+          value={urlToWrite}
+          onChangeText={text => setUrlToWrite(text)}
+        />
+      </View>
+      <View style={styles.separator} />
+      <TouchableOpacity style={styles.button} onPress={() => read()}>
+        <Text style={styles.buttonText}>先讀取</Text>
+      </TouchableOpacity>
+      <View style={styles.separator} />
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => (writing ? cancelNdefWrite() : requestNdefWrite())}>
+        <Text style={styles.buttonText}>{`${
+          writing ? '取消' : '測試寫入'
+        }`}</Text>
+      </TouchableOpacity>
+      <View style={styles.separator} />
+
+      <TouchableOpacity
+        style={styles.button}
+        onPress={() => (writing ? cancelNdefWrite() : requestFormat())}>
+        <Text style={styles.buttonText}>{`${
+          writing ? '取消' : '格式化'
+        }`}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 const App = () => {
   const [info, setInfo] = useState({
     id: '空',
-    urlToWrite: '',
   });
+  const [justwrite, setJustWriting] = useState('');
   const [support, isSupported] = useState(true);
   const [loading, setLoading] = useState(true);
   const [tagInfo, setTagInfo] = useState('無');
   const [enabled, setEnabled] = useState(false);
-  const [rtdtype, setRtdtype] = useState(RtdType.URL);
-  const [writing, setWriting] = useState(false);
 
   useEffect(() => {
     NfcManager.isSupported().then(supported => {
@@ -172,45 +417,6 @@ const App = () => {
     }
   };
 
-  const cancelNdefWrite = () => {
-    setWriting(false);
-    NfcManager.cancelNdefWrite()
-      .then(() => console.log('write cancelled'))
-      .catch(err => console.warn(err));
-  };
-
-  const requestNdefWrite = () => {
-    if (writing) {
-      return;
-    }
-
-    let bytes;
-
-    if (rtdtype === RtdType.URL) {
-      bytes = buildUrlPayload(info.urlToWrite);
-    } else if (rtdtype === RtdType.TEXT) {
-      bytes = buildTextPayload(info.urlToWrite);
-    }
-
-    setWriting(true);
-    NfcManager.requestNdefWrite(bytes)
-      .then(() => console.log('write completed'))
-      .catch(err => console.warn(err))
-      .then(() => setWriting(false));
-  };
-
-  const requestFormat = () => {
-    if (writing) {
-      return;
-    }
-
-    setWriting(true);
-    NfcManager.requestNdefWrite(null, {format: true})
-      .then(() => console.log('format completed'))
-      .catch(err => console.warn(err))
-      .then(() => setWriting(false));
-  };
-
   const cleanUp = () => {
     NfcManager.unregisterTagEvent().catch(() => 0);
     NfcManager.cancelTechnologyRequest().catch(() => 0);
@@ -277,34 +483,6 @@ const App = () => {
     }
   };
 
-  const buildUrlPayload = value => {
-    return Ndef.encodeMessage([Ndef.uriRecord(value)]);
-  };
-
-  const buildTextPayload = value => {
-    return Ndef.encodeMessage([Ndef.textRecord(value)]);
-  };
-
-  // not using it, basically without input with fixed url writen to tag
-  const write = async () => {
-    try {
-      let resp = await NfcManager.requestTechnology(NfcTech.Ndef, {
-        alertMessage: 'Ready to write some NFC tags!',
-      });
-      console.warn(resp);
-      let ndef = await NfcManager.getNdefMessage();
-      console.warn(ndef);
-      let bytes = buildUrlPayload('https://www.gazette.ncnu.edu.tw/');
-      await NfcManager.writeNdefMessage(bytes);
-      console.warn('success');
-      await NfcManager.setAlertMessageIOS('I got your tag!');
-      cleanUp();
-    } catch (ex) {
-      console.warn('ex', ex);
-      cleanUp();
-    }
-  };
-
   // Reader Component
   const Read = () => {
     return (
@@ -347,91 +525,6 @@ const App = () => {
         </TouchableOpacity>
         <Text style={styles.id}>💳 tagID : {info.id}</Text>
         <Text style={styles.tagInfo}>💳 資料 : {tagInfo}</Text>
-      </View>
-    );
-  };
-
-  // Writer Component
-  const Write = () => {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>測試 NFC Writer 功能</Text>
-        <Text style={styles.whitetext}>
-          是否支援NFC?{'  '}
-          <Text
-            style={{
-              backgroundColor: support ? 'green' : 'red',
-              color: 'white',
-              padding: 100,
-            }}>
-            {support ? '支援' : '不支援'}
-          </Text>
-        </Text>
-        <Text style={styles.whitetext}>
-          是否開啟NFC?{'  '}
-          <Text
-            style={{
-              backgroundColor: enabled ? 'green' : 'red',
-              color: 'white',
-            }}>
-            {enabled ? '開啟' : '未開啟'}
-          </Text>
-        </Text>
-        <View style={styles.separator} />
-        <View style={{flexDirection: 'row'}}>
-          <Text style={styles.labelmarginright}>類別:</Text>
-          {Object.keys(RtdType).map(key => (
-            <TouchableOpacity
-              key={key}
-              style={{marginRight: 10}}
-              onPress={() => setRtdtype(RtdType[key])}>
-              <Text
-                style={{
-                  color: rtdtype === RtdType[key] ? 'yellow' : 'white',
-                  fontSize: 16,
-                }}>
-                {key}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <View style={styles.separator2} />
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            marginBottom: 10,
-          }}>
-          <Text style={styles.labelmarginright}>輸入:</Text>
-          <TextInput
-            style={{width: 200, height: 40, backgroundColor: 'white'}}
-            value={info.urlToWrite}
-            onChangeText={url =>
-              setInfo(prevState => ({
-                ...prevState,
-                urlToWrite: url,
-              }))
-            }
-          />
-        </View>
-        <View style={styles.separator} />
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => (writing ? cancelNdefWrite() : requestNdefWrite())}>
-          <Text style={styles.buttonText}>{`${
-            writing ? '取消' : '測試寫入'
-          }`}</Text>
-        </TouchableOpacity>
-        <View style={styles.separator} />
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => (writing ? cancelNdefWrite : requestFormat())}>
-          <Text style={styles.buttonText}>{`${
-            writing ? '取消' : '格式化'
-          }`}</Text>
-        </TouchableOpacity>
-        <Text style={styles.id}>💳 tagID : {info.id}</Text>
       </View>
     );
   };
